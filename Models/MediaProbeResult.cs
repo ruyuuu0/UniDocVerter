@@ -8,4 +8,5 @@ public sealed record MediaProbeResult(
 {
     public bool HasVideo => Streams.Any(stream => stream.Type == "video");
     public bool HasAudio => Streams.Any(stream => stream.Type == "audio");
+    
 }
