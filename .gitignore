@@ -1,13 +1,8 @@
-@"
-bin/
+﻿bin/
 obj/
 .vs/
 .vscode/
 *.user
 *.suo
 *.converted.*
-"@ | Set-Content -Encoding utf8 .gitignore
-
-git rm -r --cached --ignore-unmatch bin obj
-git add .gitignore
-git status
+Program copy.cs11
