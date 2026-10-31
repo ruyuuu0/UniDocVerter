@@ -19,8 +19,11 @@ input = Path.GetFullPath(input);
 
 try
 {
-    var probeService = new FfprobeService();
-    var converter = new MediaConverter();
+string ffprobePath = ToolLocator.Find("ffprobe");
+string ffmpegPath = ToolLocator.Find("ffmpeg");
+
+var probeService = new FfprobeService(ffprobePath);
+var converter = new MediaConverter(ffmpegPath);
 
     var probe = await probeService.ProbeAsync(input);
     var formats = converter.GetAllowedFormats(probe);
