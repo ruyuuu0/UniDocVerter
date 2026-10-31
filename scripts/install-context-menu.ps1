@@ -1,11 +1,11 @@
 $ErrorActionPreference = "Stop"
 
 $app = [System.IO.Path]::GetFullPath(
-    (Join-Path $PSScriptRoot "..\artifacts\portable-test\UniDocVerter.exe")
+    (Join-Path $PSScriptRoot "..\artifacts\portable\UniDocVerter.exe")
 )
 
 if (-not (Test-Path -LiteralPath $app)) {
-    throw "Не найдено приложение: $app"
+    throw "No application found: $app"
 }
 
 $key = 'Software\Classes\*\shell\UniDocVerter'
@@ -27,5 +27,5 @@ finally {
     $command.Dispose()
 }
 
-Write-Host "Контекстное меню добавлено."
-Write-Host "Приложение: $app"
+Write-Host "Context menu ADD."
+Write-Host "Application: $app"

@@ -2,9 +2,9 @@ $key = 'Software\Classes\*\shell\UniDocVerter'
 
 try {
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($key, $false)
-    Write-Host "Пункт UniDocVerter удалён."
+    Write-Host "The UniDocVerter item has been removed."
 }
 catch {
-    Write-Error "Не удалось удалить пункт меню: $($_.Exception.Message)"
+    Write-Error "The menu item could not be deleted: $($_.Exception.Message)"
     exit 1
 }
