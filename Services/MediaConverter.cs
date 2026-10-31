@@ -128,7 +128,7 @@ public sealed class MediaConverter
             }
             catch
             {
-                // Процесс мог завершиться одновременно с отменой.
+                // The process could have ended simultaneously with the cancellation.
             }
         });
 
@@ -191,7 +191,7 @@ public sealed class MediaConverter
         }
         catch
         {
-            // Не скрываем основную ошибку, если временный файл не удалось удалить.
+            // We don’t hide the main error if the temporary file couldn’t be deleted.
         }
     }
 }

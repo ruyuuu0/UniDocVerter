@@ -46,7 +46,7 @@ public sealed class FfprobeService
             }
             catch
             {
-                // Процесс мог завершиться одновременно с отменой.
+                // The process could have ended simultaneously with the cancellation.
             }
         });
 
