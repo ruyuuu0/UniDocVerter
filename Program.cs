@@ -135,7 +135,16 @@ internal sealed class ConverterForm : Form
         StyleButton(_convertButton, secondary: false);
         _convertButton.SetBounds(474, 140, 174, 40);
 
-        _status.SetBounds(28, 365, 680, 40);
+        _progressBar.SetBounds(28, 350, 530, 18);
+        _progressBar.Style = ProgressBarStyle.Continuous;
+        _progressBar.Visible = false;
+
+        StyleButton(_cancelButton, secondary: true);
+        _cancelButton.Text = IsRussian ? "Отмена" : "Cancel";
+        _cancelButton.SetBounds(578, 342, 130, 34);
+        _cancelButton.Visible = false;
+
+        _status.SetBounds(28, 390, 680, 40);
         _status.ForeColor = Color.FromArgb(158, 169, 184);
         _status.Font = new Font("Segoe UI", 9.5F);
         _status.AutoSize = false;
@@ -153,10 +162,13 @@ internal sealed class ConverterForm : Form
         Controls.Add(_languageBox);
         Controls.Add(card);
         Controls.Add(_status);
+        Controls.Add(_progressBar);
+        Controls.Add(_cancelButton);
 
         _chooseButton.Click += async (_, _) => await ChooseFileAsync();
         _convertButton.Click += async (_, _) => await ConvertAsync();
         _languageBox.SelectedIndexChanged += (_, _) => ChangeLanguage();
+        _cancelButton.Click += (_, _) => _conversionCts?.Cancel();
 
         ApplyLanguage();
         if (!string.IsNullOrWhiteSpace(startupFile))
@@ -335,42 +347,88 @@ internal sealed class ConverterForm : Form
             return;
         }
 
+        _progressBar.Value = 0;
+        _progressBar.Visible = true;
+        _cancelButton.Visible = true;
+
+        bool hasMeasurableDuration =
+            _probeResult.Duration is { TotalMilliseconds: > 0 } &&
+            extension is not ("png" or "jpg" or "webp");
+
+        _progressBar.Style = hasMeasurableDuration
+            ? ProgressBarStyle.Continuous
+            : ProgressBarStyle.Marquee;
+
         await RunBusyOperationAsync(async () =>
         {
+            _conversionCts = new CancellationTokenSource();
+            _cancelButton.Enabled = true;
             _status.Text = IsRussian ? "Конвертирую…" : "Converting…";
 
-            string ffmpegPath = ToolLocator.Find("ffmpeg");
-            var converter = new MediaConverter(ffmpegPath);
-
-            await converter.ConvertAsync(
-                _selectedFile,
-                output,
-                extension,
-                _probeResult);
-
-            _status.Text = IsRussian ? $"Готово: {output}" : $"Done: {output}";
-
-            var result = MessageBox.Show(
-                this,
-                IsRussian
-                    ? "Конвертация завершена. Открыть папку с результатом?"
-                    : "Conversion finished. Open the output folder?",
-                "UniDocVerter",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Information);
-
-            if (result == DialogResult.Yes)
+            try
             {
-                Process.Start(new ProcessStartInfo
+                var converter = new MediaConverter(ToolLocator.Find("ffmpeg"));
+
+                var progress = new Progress<int>(value =>
                 {
-                    FileName = "explorer.exe",
-                    Arguments = $"/select,\"{output}\"",
-                    UseShellExecute = true
+                    if (_progressBar.Style == ProgressBarStyle.Continuous)
+                        _progressBar.Value = Math.Clamp(value, 0, 100);
                 });
+
+                await converter.ConvertAsync(
+                    _selectedFile,
+                    output,
+                    extension,
+                    _probeResult,
+                    progress,
+                    _conversionCts.Token);
+
+                _status.Text = IsRussian
+                    ? $"Готово: {output}"
+                    : $"Done: {output}";
+
+                var result = MessageBox.Show(
+                    this,
+                    IsRussian
+                        ? "Конвертация завершена. Открыть папку с результатом?"
+                        : "Conversion finished. Open the output folder?",
+                    "UniDocVerter",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Information);
+
+                if (result == DialogResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{output}\"",
+                        UseShellExecute = true
+                    });
+                }
+            }
+            finally
+            {
+                _conversionCts?.Dispose();
+                _conversionCts = null;
+                _cancelButton.Enabled = false;
+                _cancelButton.Visible = false;
+                _progressBar.Visible = false;
             }
         });
     }
+    private readonly ProgressBar _progressBar = new()
+    {
+        Minimum = 0,
+        Maximum = 100,
+        Value = 0
+    };
 
+    private readonly Button _cancelButton = new()
+    {
+        Enabled = false
+    };
+
+    private CancellationTokenSource? _conversionCts;
     private async Task RunBusyOperationAsync(Func<Task> operation)
     {
         if (_isBusy)
@@ -384,6 +442,10 @@ internal sealed class ConverterForm : Form
         try
         {
             await operation();
+        }
+        catch (OperationCanceledException)
+        {
+            _status.Text = IsRussian ? "Конвертация отменена." : "Conversion cancelled.";
         }
         catch (Win32Exception ex)
         {

@@ -3,7 +3,8 @@ namespace UniDocVerter.Models;
 public sealed record MediaStream(string Type);
 
 public sealed record MediaProbeResult(
-    IReadOnlyList<MediaStream> Streams)
+    IReadOnlyList<MediaStream> Streams,
+    TimeSpan? Duration = null)
 {
     public bool HasVideo => Streams.Any(stream => stream.Type == "video");
     public bool HasAudio => Streams.Any(stream => stream.Type == "audio");

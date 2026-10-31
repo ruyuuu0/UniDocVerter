@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using UniDocVerter.Models;
 
 namespace UniDocVerter.Services;
@@ -48,6 +49,7 @@ public sealed class MediaConverter
         string output,
         string extension,
         MediaProbeResult probe,
+        IProgress<int>? progress = null,
         CancellationToken cancellationToken = default)
     {
         extension = extension.TrimStart('.').ToLowerInvariant();
@@ -64,11 +66,15 @@ public sealed class MediaConverter
         {
             FileName = _ffmpegPath,
             UseShellExecute = false,
+            RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true
         };
 
         startInfo.ArgumentList.Add("-n");
+        startInfo.ArgumentList.Add("-nostats");
+        startInfo.ArgumentList.Add("-progress");
+        startInfo.ArgumentList.Add("pipe:1");
         startInfo.ArgumentList.Add("-i");
         startInfo.ArgumentList.Add(input);
 
@@ -113,15 +119,79 @@ public sealed class MediaConverter
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Не удалось запустить FFmpeg.");
 
-        string error = await process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-
-        if (process.ExitCode != 0)
+        using var registration = cancellationToken.Register(() =>
         {
-            throw new InvalidOperationException(
-                string.IsNullOrWhiteSpace(error)
-                    ? "FFmpeg завершился с ошибкой."
-                    : error);
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Процесс мог завершиться одновременно с отменой.
+            }
+        });
+
+        try
+        {
+            Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+            while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
+            {
+                if (!line.StartsWith("out_time_us=", StringComparison.Ordinal))
+                    continue;
+
+                string value = line["out_time_us=".Length..];
+
+                if (probe.Duration is not { TotalMilliseconds: > 0 } duration ||
+                    !long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long microseconds))
+                {
+                    continue;
+                }
+
+                double percent = microseconds / (duration.TotalMilliseconds * 1000d) * 100d;
+                progress?.Report((int)Math.Clamp(percent, 0, 99));
+            }
+
+            await process.WaitForExitAsync(cancellationToken);
+            string error = await errorTask;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(error)
+                        ? "FFmpeg завершился с ошибкой."
+                        : error);
+            }
+
+            progress?.Report(100);
+        }
+        catch (OperationCanceledException)
+        {
+            TryDeletePartialOutput(output);
+            throw;
+        }
+        catch
+        {
+            if (process.ExitCode != 0)
+                TryDeletePartialOutput(output);
+
+            throw;
+        }
+    }
+
+    private static void TryDeletePartialOutput(string output)
+    {
+        try
+        {
+            if (File.Exists(output))
+                File.Delete(output);
+        }
+        catch
+        {
+            // Не скрываем основную ошибку, если временный файл не удалось удалить.
         }
     }
 }

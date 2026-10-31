@@ -29,13 +29,26 @@ public sealed class FfprobeService
         startInfo.ArgumentList.Add("-v");
         startInfo.ArgumentList.Add("error");
         startInfo.ArgumentList.Add("-show_entries");
-        startInfo.ArgumentList.Add("stream=codec_type");
+        startInfo.ArgumentList.Add("stream=codec_type:format=duration");
         startInfo.ArgumentList.Add("-of");
         startInfo.ArgumentList.Add("json");
         startInfo.ArgumentList.Add(input);
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Не удалось запустить FFprobe.");
+
+        using var registration = cancellationToken.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Процесс мог завершиться одновременно с отменой.
+            }
+        });
 
         string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
         string error = await process.StandardError.ReadToEndAsync(cancellationToken);
@@ -50,9 +63,9 @@ public sealed class FfprobeService
         }
 
         using var document = JsonDocument.Parse(output);
+        var root = document.RootElement;
 
-        var streams = document.RootElement
-            .GetProperty("streams")
+        var streams = root.GetProperty("streams")
             .EnumerateArray()
             .Select(stream => new MediaStream(
                 stream.TryGetProperty("codec_type", out var type)
@@ -60,6 +73,21 @@ public sealed class FfprobeService
                     : ""))
             .ToList();
 
-        return new MediaProbeResult(streams);
+        TimeSpan? duration = null;
+
+        if (root.TryGetProperty("format", out var format) &&
+            format.TryGetProperty("duration", out var durationElement) &&
+            double.TryParse(
+                durationElement.GetString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out double seconds) &&
+            double.IsFinite(seconds) &&
+            seconds > 0)
+        {
+            duration = TimeSpan.FromSeconds(seconds);
+        }
+
+        return new MediaProbeResult(streams, duration);
     }
 }
