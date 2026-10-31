@@ -72,7 +72,6 @@ internal sealed class ConverterForm : Form
         DragEnter += Form_DragEnter;
         DragDrop += Form_DragDrop;
 
-        
         var languageCaption = new Label
         {
             Text = "Language / Язык",
